@@ -1,0 +1,119 @@
+name: lab-llm-gateway
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [lab-llm]
+
+  litellm:
+    image: ${LITELLM_IMAGE}
+    restart: unless-stopped
+    command: ["--config", "/app/config/litellm.yaml", "--host", "0.0.0.0", "--port", "4000"]
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      ARENA_API_KEY: ${ARENA_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - ./config/litellm.yaml:/app/config/litellm.yaml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:4000:4000"
+    networks: [lab-llm]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      LAB_LLM_SITE: ${LAB_LLM_SITE:-:8080}
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    volumes:
+      - ./config/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [litellm]
+    networks: [lab-llm]
+
+  vllm-code-a:
+    profiles: ["gpu"]
+    image: ${VLLM_IMAGE}
+    restart: unless-stopped
+    ipc: host
+    gpus: all
+    environment:
+      CUDA_VISIBLE_DEVICES: "0"
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    command:
+      - "--model"
+      - "${LOCAL_CODE_MODEL}"
+      - "--served-model-name"
+      - "local-code"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--max-model-len"
+      - "${LOCAL_MAX_MODEL_LEN:-32768}"
+      - "--gpu-memory-utilization"
+      - "${VLLM_GPU_MEMORY_UTILIZATION:-0.90}"
+      - "--enable-prefix-caching"
+    ports:
+      - "127.0.0.1:8001:8000"
+    networks: [lab-llm]
+
+  vllm-code-b:
+    profiles: ["gpu"]
+    image: ${VLLM_IMAGE}
+    restart: unless-stopped
+    ipc: host
+    gpus: all
+    environment:
+      CUDA_VISIBLE_DEVICES: "1"
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    command:
+      - "--model"
+      - "${LOCAL_CODE_MODEL}"
+      - "--served-model-name"
+      - "local-code"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--max-model-len"
+      - "${LOCAL_MAX_MODEL_LEN:-32768}"
+      - "--gpu-memory-utilization"
+      - "${VLLM_GPU_MEMORY_UTILIZATION:-0.90}"
+      - "--enable-prefix-caching"
+    ports:
+      - "127.0.0.1:8002:8000"
+    networks: [lab-llm]
+
+networks:
+  lab-llm:
+
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:
+  hf-cache:
