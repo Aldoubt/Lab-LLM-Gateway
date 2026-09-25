@@ -1,0 +1,11 @@
+{$LAB_LLM_SITE} {
+	encode zstd gzip
+
+	@inference path /v1/* /anthropic/*
+	handle @inference {
+		reverse_proxy litellm:4000
+	}
+
+	# Admin and key-management routes are intentionally not public.
+	respond "Not Found" 404
+}
