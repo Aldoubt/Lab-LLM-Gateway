@@ -1,0 +1,30 @@
+model_list:
+  # Same public model alias, two independent single-GPU deployments.
+  - model_name: lab-local-code
+    litellm_params:
+      model: openai/local-code
+      api_base: http://vllm-code-a:8000/v1
+      api_key: local-not-used
+
+  - model_name: lab-local-code
+    litellm_params:
+      model: openai/local-code
+      api_base: http://vllm-code-b:8000/v1
+      api_key: local-not-used
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+litellm_settings:
+  num_retries: 2
+  request_timeout: 600
+  drop_params: true
+
+router_settings:
+  routing_strategy: simple-shuffle
+  num_retries: 2
+  retry_after: 1
+  cooldown_time: 30
+
+# Arena/cloud deployments are added only after direct provider validation.
+# See docs/DEPLOYMENT.md.
